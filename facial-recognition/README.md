@@ -1,6 +1,18 @@
-# Real-Time Facial Recognition & Detection
+# Real-Time Face Detection & Recognition
 
-Python application that runs **real-time face detection** with OpenCV’s DNN SSD model and **identity recognition** with **DeepFace** against a local gallery under `known_faces/`.
+Python app that combines **face detection** (find faces in the camera feed) with **face recognition** (guess who each face is using a local gallery).
+
+## Detection vs recognition
+
+These are separate steps in a typical pipeline:
+
+| | **Detection** | **Recognition** |
+|---|---|---|
+| **Question** | *Where* are faces in the image? | *Who* is this face (if anyone we know)? |
+| **Output** | Bounding boxes + confidence scores | Name / **Unknown**, based on similarity to `known_faces/` |
+| **This project** | OpenCV DNN SSD (`detector.py`) | DeepFace embeddings + gallery search (`recognizer.py`) |
+
+Detection does **not** need enrolled identities—it only finds candidate face regions. Recognition runs **on cropped faces** from detection and compares them to your stored references; without a gallery, every detected face is labeled **Unknown**.
 
 ## Setup
 
@@ -11,7 +23,7 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-On first run, OpenCV DNN weights are downloaded into `models/`. DeepFace will download model weights on demand.
+On first run, OpenCV DNN weights are downloaded into `models/`. DeepFace downloads model weights on demand.
 
 ## Known faces layout
 
@@ -36,36 +48,38 @@ python main.py
 |----------|---------|-------------|
 | `--camera` | `0` | Webcam index |
 | `--model` | `VGG-Face` | `VGG-Face`, `Facenet`, or `ArcFace` |
-| `--det-conf` | `0.5` | Minimum detection confidence |
-| `--recognition-interval` | `5` | Run recognition every *N* frames |
+| `--det-conf` | `0.5` | Minimum **detection** confidence |
+| `--recognition-interval` | `5` | Run **recognition** every *N* frames |
 | `--min-face` | `40` | Ignore faces smaller than this (px) at full resolution |
-| `--detection-scale` | `0.5` | Resize factor for detection (faster, then map boxes back) |
+| `--detection-scale` | `0.5` | Resize factor for **detection** only (faster; boxes mapped back to full resolution) |
 
 ### Keyboard
 
 | Key | Action |
 |-----|--------|
 | `q` | Quit |
-| `m` | Cycle model: VGG-Face → Facenet → ArcFace |
+| `m` | Cycle recognition model: VGG-Face → Facenet → ArcFace |
 | `s` | Save screenshot (project root) |
-| `a` | Register **largest** face: prompts for name in the terminal, saves crop under `known_faces/<name>/`, clears DeepFace’s `representations*.pkl` cache |
+| `a` | Register **largest** detected face: prompts for name in the terminal, saves crop under `known_faces/<name>/`, clears DeepFace’s `representations*.pkl` cache |
 
 ## Configuration
 
-Edit `config.py` for default paths, per-model **recognition distance thresholds** (aligned with DeepFace verification), and `DEEPFACE_ALIGN` (cropped faces default to `False`).
+Edit `config.py` for default paths, per-model **recognition** distance thresholds (aligned with DeepFace verification), and `DEEPFACE_ALIGN` (cropped faces default to `False`).
 
 ## Architecture
 
+Pipeline order: **detect** → crop regions → **recognize** each crop against the gallery.
+
 - **`main.py`** — `VideoCapture` loop, frame skipping for recognition, HUD, keyboard UI.
-- **`detector.py`** — OpenCV DNN face detector + confidence; optional auto-download of prototxt/caffemodel.
+- **`detector.py`** — OpenCV DNN face **detector** + confidence; optional auto-download of prototxt/caffemodel.
 - **`recognizer.py`** — Background thread; **`DeepFace.find()`** on each cropped face; clears gallery pickle cache when identities change.
 - **`utils.py`** — FPS, scaling boxes to full resolution, crop/draw helpers.
 - **`config.py`** — Thresholds and constants.
 
-Detection runs on **every frame** (optionally downscaled). Recognition runs **every N frames** in a **worker thread** so the preview stays responsive. Labels are held until the next consistent multi-face result so the UI does not flicker when async results lag by one frame.
+**Detection** runs on **every frame** (optionally downscaled). **Recognition** runs **every N frames** in a **worker thread** so the preview stays responsive. Labels are held until the next consistent multi-face result so the UI does not flicker when async results lag by one frame.
 
 ## Notes
 
 - **GPU**: TensorFlow/DeepFace will use GPU if configured in your environment; otherwise CPU.
-- **Empty gallery**: All faces show as **Unknown** until you add references under `known_faces/`.
+- **Empty gallery**: Detection still finds faces; **recognition** labels them all **Unknown** until you add references under `known_faces/`.
 - **Performance**: Lower `--detection-scale`, increase `--recognition-interval`, or use a lighter DeepFace model to improve FPS.
